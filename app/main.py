@@ -112,12 +112,16 @@ def analyze_stock(ticker: str):
         else:
             recommendation = "Sell"
 
-        recommendation_reason = (
-            f"- 📌 **P/E Insight:** {pe_comment}\n"
-            f"- 💵 **Earnings:** {eps_comment}\n"
-            f"- ⚖️ **Political Risk:** {political_risk}\n"
-            f"- 📰 **Sentiment:** {news_sentiment}"
-        )
+        def color_text(label: str, value: str, sentiment: str) -> str:
+            color = "🟥" if sentiment.lower() in ["high", "negative", "ban"] else "🟩"
+            return f"- {color} **{label}:** {value}"
+
+        recommendation_reason = "\n".join([
+            color_text("P/E Insight", pe_comment, pe_comment.split(" – ")[0]),
+            color_text("Earnings", eps_comment, eps_comment.split(" – ")[0]),
+            color_text("Political Risk", political_risk, political_risk),
+            color_text("Sentiment", news_sentiment, news_sentiment)
+        ])
 
         return StockResponse(
             symbol=ticker.upper(),
@@ -147,16 +151,3 @@ def analyze_stock(ticker: str):
 @app.get("/stock/{ticker}", response_model=StockResponse)
 def get_stock(ticker: str):
     return analyze_stock(ticker)
-
-@app.get("/explain/{term}")
-def explain_term(term: str):
-    glossary = {
-        "pe": "P/E Ratio (Price-to-Earnings): Shows how much investors are paying per dollar of earnings. High = expensive.",
-        "eps": "EPS (Earnings per Share): Measures company profit per share. High = strong profitability.",
-        "dividend": "Dividend Yield: % of stock price paid back to investors annually. High = good passive income.",
-        "market_cap": "Market Capitalization: Total company value in the market. Large = stability, Small = growth or riskier."
-    }
-    key = term.lower().replace("_", "")
-    if key in glossary:
-        return {"term": term, "meaning": glossary[key]}
-    raise HTTPException(status_code=404, detail="Term not found")

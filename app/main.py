@@ -108,3 +108,4 @@ def analyze_stock(ticker: str):
 @app.get("/stock/{ticker}", response_model=StockResponse)
 def get_stock(ticker: str):
     return analyze_stock(ticker)
+

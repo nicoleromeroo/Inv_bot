@@ -1,0 +1,11 @@
+# requirements.txt
+yfinance
+fastapi
+uvicorn
+pydantic
+python-multipart
+requests
+python-dotenv
+
+# Run locally with:
+# uvicorn app.main:app --reload

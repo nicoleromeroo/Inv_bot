@@ -106,13 +106,13 @@ def analyze_stock(ticker: str):
 
         if pe_ratio < 15 and eps > 0 and news_sentiment == "Positive":
             recommendation = "Buy"
-            recommendation_reason = "Strong earnings, good valuation, and positive sentiment."
+            recommendation_reason = f"Good P/E ({pe_comment}), solid EPS ({eps_comment}), positive sentiment."
         elif 15 <= pe_ratio <= 25 and news_sentiment == "Neutral":
             recommendation = "Hold"
-            recommendation_reason = "Stable financials and neutral political impact."
+            recommendation_reason = f"Fair valuation ({pe_comment}), neutral news, and stable fundamentals."
         else:
             recommendation = "Sell"
-            recommendation_reason = "Weak sentiment or overvaluation. Political factors: " + political_risk
+            recommendation_reason = f"P/E indicates risk ({pe_comment}), earnings: {eps_comment}, political: {political_risk}, sentiment: {news_sentiment}."
 
         return StockResponse(
             symbol=ticker.upper(),
@@ -142,3 +142,4 @@ def analyze_stock(ticker: str):
 @app.get("/stock/{ticker}", response_model=StockResponse)
 def get_stock(ticker: str):
     return analyze_stock(ticker)
+

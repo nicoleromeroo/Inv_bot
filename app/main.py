@@ -1,3 +1,4 @@
+# app/main.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -90,17 +91,17 @@ def analyze_stock(ticker: str):
             trend_comment = "No trend data available."
 
         if pe_ratio < 15:
-            pe_comment = "Low – possibly undervalued"
+            pe_comment = "Low – undervalued: cheaper vs earnings"
         elif pe_ratio <= 25:
             pe_comment = "Moderate – fair value"
         else:
-            pe_comment = "High – possibly overvalued"
+            pe_comment = "High – overvalued: expensive vs earnings"
 
         target_comment = f"Analysts expect {target_diff:.1f}% upside." if target_diff > 0 else f"Target is {abs(target_diff):.1f}% below current price."
 
-        eps_comment = "High earnings performance" if eps > 5 else "Moderate earnings" if eps > 1 else "Low earnings"
-        dividend_comment = "High income potential" if dividend_yield > 4 else "Moderate yield" if dividend_yield > 1 else "Low or no dividend"
-        market_cap_comment = "Large-cap stability" if market_cap_raw >= 200e9 else "Mid-cap company" if market_cap_raw >= 10e9 else "Small-cap risk"
+        eps_comment = "High – strong profitability" if eps > 5 else "Moderate – some profit" if eps > 1 else "Low – weak profit/losses"
+        dividend_comment = "High – good passive income" if dividend_yield > 4 else "Moderate – some dividends" if dividend_yield > 1 else "Low – no dividend income"
+        market_cap_comment = "Large – stable company" if market_cap_raw >= 200e9 else "Mid – medium size" if market_cap_raw >= 10e9 else "Small – higher risk"
 
         political_risk, news_sentiment, headlines = fetch_news_sentiment(ticker)
 
@@ -146,3 +147,16 @@ def analyze_stock(ticker: str):
 @app.get("/stock/{ticker}", response_model=StockResponse)
 def get_stock(ticker: str):
     return analyze_stock(ticker)
+
+@app.get("/explain/{term}")
+def explain_term(term: str):
+    glossary = {
+        "pe": "P/E Ratio (Price-to-Earnings): Shows how much investors are paying per dollar of earnings. High = expensive.",
+        "eps": "EPS (Earnings per Share): Measures company profit per share. High = strong profitability.",
+        "dividend": "Dividend Yield: % of stock price paid back to investors annually. High = good passive income.",
+        "market_cap": "Market Capitalization: Total company value in the market. Large = stability, Small = growth or riskier."
+    }
+    key = term.lower().replace("_", "")
+    if key in glossary:
+        return {"term": term, "meaning": glossary[key]}
+    raise HTTPException(status_code=404, detail="Term not found")

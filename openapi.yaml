@@ -1,0 +1,60 @@
+openapi: 3.0.0
+info:
+  title: Investment GPT Stock API
+  version: 1.0.1
+servers:
+  - url: https://your-api-name.onrender.com
+paths:
+  /stock/{ticker}:
+    get:
+      summary: Get stock analysis by ticker
+      operationId: getStock
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stock ticker symbol (e.g. AAPL)
+      responses:
+        '200':
+          description: Stock data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockResponse'
+components:
+  schemas:
+    StockResponse:
+      type: object
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        current_price:
+          type: number
+        target_price:
+          type: number
+        pe_ratio:
+          type: number
+        eps:
+          type: number
+        dividend_yield:
+          type: number
+        market_cap:
+          type: string
+        recommendation:
+          type: string
+        political_risk:
+          type: string
+        news_sentiment:
+          type: string
+        target_diff:
+          type: number
+        pe_comment:
+          type: string
+        target_comment:
+          type: string
+        recommendation_reason:
+          type: string

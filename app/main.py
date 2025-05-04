@@ -2,13 +2,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
-load_dotenv()
 import yfinance as yf
 import requests
 import os
-
-
 
 app = FastAPI()
 
@@ -35,6 +31,10 @@ class StockResponse(BaseModel):
     recommendation: str
     political_risk: str
     news_sentiment: str
+    target_diff: float
+    pe_comment: str
+    target_comment: str
+    recommendation_reason: str
 
 
 def fetch_news_sentiment(ticker: str) -> tuple[str, str]:
@@ -54,7 +54,6 @@ def fetch_news_sentiment(ticker: str) -> tuple[str, str]:
         )
         sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
 
-        # Example of keyword flagging
         political_keywords = ["china", "regulation", "ban", "sanction", "government"]
         joined_headlines = " ".join(headlines).lower()
         political_flags = [k for k in political_keywords if k in joined_headlines]
@@ -79,12 +78,27 @@ def analyze_stock(ticker: str):
         market_cap = f"{market_cap_raw / 1e9:.2f}B" if market_cap_raw else "N/A"
         name = info.get("shortName") or ticker.upper()
 
+        target_diff = ((target_price - current_price) / current_price) * 100 if current_price else 0
+
+        # Enriching comments
+        if pe_ratio < 15:
+            pe_comment = "Low – possibly undervalued"
+        elif pe_ratio <= 25:
+            pe_comment = "Moderate – fair value"
+        else:
+            pe_comment = "High – possibly overvalued"
+
+        target_comment = f"Analysts expect {target_diff:.1f}% upside." if target_diff > 0 else f"Target is {abs(target_diff):.1f}% below current price."
+
         if pe_ratio < 15 and eps > 0:
             recommendation = "Buy"
+            recommendation_reason = "Undervalued with strong earnings."
         elif 15 <= pe_ratio <= 25:
             recommendation = "Hold"
+            recommendation_reason = "Fairly valued with stable growth."
         else:
             recommendation = "Sell"
+            recommendation_reason = "Possibly overvalued or weak future outlook."
 
         political_risk, news_sentiment = fetch_news_sentiment(ticker)
 
@@ -100,6 +114,10 @@ def analyze_stock(ticker: str):
             recommendation=recommendation,
             political_risk=political_risk,
             news_sentiment=news_sentiment,
+            target_diff=round(target_diff, 2),
+            pe_comment=pe_comment,
+            target_comment=target_comment,
+            recommendation_reason=recommendation_reason,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
@@ -108,4 +126,3 @@ def analyze_stock(ticker: str):
 @app.get("/stock/{ticker}", response_model=StockResponse)
 def get_stock(ticker: str):
     return analyze_stock(ticker)
-

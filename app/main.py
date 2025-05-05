@@ -1,4 +1,3 @@
-# app/main.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,7 +7,7 @@ import os
 
 app = FastAPI()
 
-# Allow all origins (for development)
+# Allow all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,6 +39,11 @@ class StockResponse(BaseModel):
     eps_comment: str
     dividend_comment: str
     market_cap_comment: str
+
+# To avoid 405 Method Not Allowed for HEAD requests
+@app.options("/stock/{ticker}")
+async def options_stock(ticker: str):
+    return {"message": "CORS or OPTIONS request received"}
 
 def fetch_news_sentiment(ticker: str) -> tuple[str, str, list[str]]:
     if not NEWS_API_KEY:

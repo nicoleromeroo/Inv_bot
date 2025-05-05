@@ -152,6 +152,7 @@ def analyze_stock(ticker: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
 
+
 @app.get("/stock/{ticker}", response_model=StockResponse)
 def get_stock(ticker: str):
     return analyze_stock(ticker)

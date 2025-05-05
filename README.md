@@ -27,16 +27,6 @@ Returns enhanced stock analysis including:
 * Target Price difference and recent trend analysis
 * Political risk factors and current news sentiment
 * Recommendation based on combined factors: Buy, Hold, or Sell
-* Annotated insights and explanations for each key metric
-
-### /explain/{term} Endpoint
-
-Provides concise definitions of commonly used financial terms, supporting user queries for:
-
-* pe (Price-to-Earnings Ratio)
-* eps (Earnings Per Share)
-* dividend (Dividend Yield)
-* market\_cap (Market Capitalization)
 
 ## File Overview
 
@@ -79,7 +69,6 @@ The backend is used by a custom GPT through the OpenAI Assistants API. The GPT:
 
 * Sends a GET request to `/stock/{ticker}` to retrieve analysis
 * Displays results in a structured, user-friendly markdown format
-* Optionally queries `/explain/{term}` for term clarification upon user request
 
 Output includes:
 
@@ -90,7 +79,6 @@ Output includes:
 ## Validated Use Cases
 
 * Stock analysis requests (e.g., "Analyze AAPL")
-* Financial term clarification (e.g., "What does EPS mean?")
 * Political influence recognition (e.g., companies impacted by China regulations)
 * Input error handling (e.g., invalid or unknown tickers)
 
@@ -126,21 +114,6 @@ GET /stock/AAPL
   "eps_comment": "High – strong profitability",
   "dividend_comment": "High – good passive income",
   "market_cap_comment": "Large – stable company"
-}
-```
-
-### Request:
-
-```
-GET /explain/eps
-```
-
-### Sample Response:
-
-```json
-{
-  "term": "eps",
-  "meaning": "EPS (Earnings per Share): Measures company profit per share. High = strong profitability."
 }
 ```
 

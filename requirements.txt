@@ -1,8 +1,8 @@
-# requirements.txt
-yfinance
-fastapi
+finance~=0.2.58
+fastapi~=0.115.12
 uvicorn
-pydantic
+pydantic~=2.11.4
 python-multipart
-requests
+requests~=2.32.3
 python-dotenv
+transformers~=4.51.3

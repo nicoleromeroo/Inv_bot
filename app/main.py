@@ -1,13 +1,15 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import yfinance as yf
 import requests
 import os
+from transformers import pipeline
+from collections import Counter
 
 app = FastAPI()
 
-# Allow all origins
+# Allow all origins (for development)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,6 +19,10 @@ app.add_middleware(
 )
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+
+# Initialize a transformer pipeline for sentiment analysis
+sentiment_analysis = pipeline("sentiment-analysis")
+
 
 class StockResponse(BaseModel):
     symbol: str
@@ -40,36 +46,66 @@ class StockResponse(BaseModel):
     dividend_comment: str
     market_cap_comment: str
 
-# To avoid 405 Method Not Allowed for HEAD requests
-@app.options("/stock/{ticker}")
-async def options_stock(ticker: str):
-    return {"message": "CORS or OPTIONS request received"}
+
+@app.api_route("/stock/{ticker}", methods=["GET", "HEAD"], response_model=StockResponse)
+async def get_stock(ticker: str, request: Request):
+    if request.method == "HEAD":
+        return {}  # Return empty for HEAD request (only headers)
+    return analyze_stock(ticker)
+
 
 def fetch_news_sentiment(ticker: str) -> tuple[str, str, list[str]]:
     if not NEWS_API_KEY:
         return "No API Key", "Unknown", []
 
     url = (
-        f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&apiKey={NEWS_API_KEY}&language=en"
+        f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&apiKey={NEWS_API_KEY}&language=en&pageSize=50"
     )
     try:
         response = requests.get(url)
-        articles = response.json().get("articles", [])[:5]
+        articles = response.json().get("articles", [])
         headlines = [a.get("title", "") for a in articles]
+
+        # Use sentiment analysis on each article to determine sentiment
         sentiment_score = sum(
-            1 if any(word in h.lower() for word in ["beat", "surge", "strong"]) else -1
-            for h in headlines
+            1 if sentiment_analysis(headline)[0]['label'] == 'POSITIVE' else -1 for headline in headlines
         )
         sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
 
-        political_keywords = ["china", "regulation", "ban", "sanction", "government"]
-        joined_headlines = " ".join(headlines).lower()
-        political_flags = [k for k in political_keywords if k in joined_headlines]
-        risk_summary = ", ".join(political_flags).capitalize() if political_flags else "None"
+        # Using NLP to analyze political context (no keywords, full analysis of the articles)
+        political_context = analyze_political_risk(articles)
 
-        return risk_summary, sentiment, headlines
-    except Exception:
+        return political_context, sentiment, headlines
+    except Exception as e:
         return "Error fetching news", "Unknown", []
+
+
+def analyze_political_risk(articles: list) -> str:
+    """
+    Analyzes political risk based on the headlines and article content.
+    We use NLP techniques to extract the political state.
+    """
+    political_issues = []
+
+    # Extract content from articles and analyze using sentiment analysis or topic modeling
+    for article in articles:
+        title = article.get("title", "")
+        description = article.get("description", "")
+        content = title + " " + description
+
+        # Use sentiment analysis or classify the content based on topics
+        sentiment_result = sentiment_analysis(content)
+        sentiment = sentiment_result[0]['label']
+
+        if sentiment == 'NEGATIVE':
+            political_issues.append("Negative political sentiment detected.")
+
+    # Deduplicate and summarize
+    political_counter = Counter(political_issues)
+    summarized_political_risk = "\n".join([f"- {item}" for item, count in political_counter.items()])
+
+    return summarized_political_risk or "No significant political risk detected."
+
 
 def analyze_stock(ticker: str):
     stock = yf.Ticker(ticker)
@@ -151,8 +187,3 @@ def analyze_stock(ticker: str):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing data: {str(e)}")
-
-
-@app.get("/stock/{ticker}", response_model=StockResponse)
-def get_stock(ticker: str):
-    return analyze_stock(ticker)

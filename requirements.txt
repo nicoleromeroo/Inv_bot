@@ -1,4 +1,4 @@
-finance~=25.1.1
+finance~=0.2502
 fastapi~=0.115.12
 uvicorn
 pydantic~=2.11.4

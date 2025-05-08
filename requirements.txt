@@ -8,3 +8,6 @@ python-dotenv
 transformers~=4.51.3
 yfinance
 torch
+scikit-learn
+numpy
+pillow

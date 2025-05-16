@@ -16,7 +16,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 class StockResponse(BaseModel):
     symbol: str
     name: str
@@ -36,14 +35,14 @@ class StockResponse(BaseModel):
     dividend_comment: str
     market_cap_comment: str
     kpi_summary: str
-
+    next_earnings_date: str
+    next_dividend_date: str
 
 @app.api_route("/stock/{ticker}", methods=["GET", "HEAD"], response_model=StockResponse)
 async def get_stock(ticker: str, request: Request):
     if request.method == "HEAD":
         return {}
     return analyze_stock(ticker)
-
 
 def grade_metric(value: float, good: float, bad: float) -> str:
     if value >= good:
@@ -53,15 +52,14 @@ def grade_metric(value: float, good: float, bad: float) -> str:
     else:
         return "🟡"
 
-
 def summarize_kpis(pe, eps, div, pb, debt, roe):
     return "\n".join([
         f"{grade_metric(pe, 15, 25)} P/E Ratio: {pe} (lower = cheaper vs earnings)",
         f"{grade_metric(eps, 5, 1)} EPS: {eps} (profit per share)",
-        f"{grade_metric(div, 3, 1)} Dividend Yield: {div}% (cash return)",
+        f"{grade_metric(div, 3, 1)} Dividend Yield: {div:.2f}% (cash return)",
         f"{grade_metric(pb, 1.5, 3)} Price/Book: {pb} (value vs net assets)",
         f"{grade_metric(debt, 0.5, 1)} Debt/Equity: {debt} (lower = less risky)",
-        f"{grade_metric(roe, 15, 5)} Return on Equity: {roe}% (profitability)"
+        f"{grade_metric(roe, 15, 5)} Return on Equity: {roe:.2f}% (profitability)"
     ])
 
 def analyze_stock(ticker: str):
@@ -74,11 +72,10 @@ def analyze_stock(ticker: str):
         target_price = info.get("targetMeanPrice", 0.0)
         pe = info.get("trailingPE", 0.0)
         eps = info.get("trailingEps", 0.0)
-        div = (info.get("dividendYield") or 0.0)
+        div = (info.get("dividendYield") or 0.0) * 100
         cap_raw = info.get("marketCap", 0.0)
 
         market_cap = (
-            f"{cap_raw / 1e12:.2f}T" if cap_raw >= 1e12 else
             f"{cap_raw / 1e12:.2f}T" if cap_raw >= 1e12 else
             f"{cap_raw / 1e9:.2f}B" if cap_raw >= 1e9 else
             f"{cap_raw / 1e6:.2f}M" if cap_raw > 0 else "N/A"
@@ -101,10 +98,8 @@ def analyze_stock(ticker: str):
         eps_comment = "Strong" if eps > 5 else "Moderate" if eps > 1 else "Weak"
 
         if div > 0:
-            annual_income = div * 1000
-            dividend_comment = (
-                f"Dividend Yield: {div:.2f}% — with $1000 you get around ${annual_income:.2f} yearly"
-            )
+            annual_income = (div / 100) * 1000
+            dividend_comment = f"Good — with $1000 you get approx. ${annual_income:.2f} annually"
         else:
             dividend_comment = "No dividend paid"
 
@@ -124,6 +119,9 @@ def analyze_stock(ticker: str):
 
         kpi_summary = summarize_kpis(pe, eps, div, pb, debt, roe)
 
+        next_earnings = info.get("earningsAnnouncement", "Not provided")
+        next_dividend = info.get("exDividendDate", "N/A")
+
         return StockResponse(
             symbol=ticker.upper(),
             name=name,
@@ -142,7 +140,9 @@ def analyze_stock(ticker: str):
             eps_comment=eps_comment,
             dividend_comment=dividend_comment,
             market_cap_comment=market_cap_comment,
-            kpi_summary=kpi_summary
+            kpi_summary=kpi_summary,
+            next_earnings_date=str(next_earnings),
+            next_dividend_date=str(next_dividend)
         )
 
     except Exception as e:

@@ -4,7 +4,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import yfinance as yf
-import numpy as np
 import traceback
 
 app = FastAPI()
@@ -41,22 +40,6 @@ class StockResponse(BaseModel):
     next_earnings: str
     next_dividend: str
 
-    # added fundamental metrics
-    revenue_yoy: float
-    fcf: float
-    debt_to_equity: float
-    roe: float
-    ev_ebitda: float
-
-    # added technical metrics
-    ma50: float
-    ma200: float
-    beta: float
-    rsi: float
-    volatility: float
-    var: float
-    drawdown: float
-
 @app.api_route("/stock/{ticker}", methods=["GET", "HEAD"], response_model=StockResponse)
 async def get_stock(ticker: str, request: Request):
     if request.method == "HEAD":
@@ -86,130 +69,102 @@ def find_support_resistance(stock: yf.Ticker):
     if history.empty:
         return "N/A", "N/A"
 
-    low52 = history["Close"].min()
-    high52 = history["Close"].max()
-    return f"${low52:.2f}", f"${high52:.2f}"
+    closes = history["Close"].round(-1)
+    price_counts = closes.value_counts().sort_index()
 
-def compute_rsi(arr: np.ndarray, period: int = 14) -> float:
-    deltas = np.diff(arr)
-    ups = np.maximum(deltas, 0)
-    downs = -np.minimum(deltas, 0)
-    roll_up = ups[-period:].mean() if len(ups) >= period else 0.0
-    roll_down = downs[-period:].mean() if len(downs) >= period else 1.0
-    rs = roll_up / roll_down if roll_down else 0.0
-    return 100 - (100 / (1 + rs))
+    midpoint = len(price_counts) // 2
+    support = price_counts.iloc[:midpoint].idxmax()
+    resistance = price_counts.iloc[midpoint:].idxmax()
+    return f"${support}", f"${resistance}"
 
-def analyze_stock(ticker: str) -> StockResponse:
+def analyze_stock(ticker: str):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
 
-        symbol = ticker.upper()
-
-        # Core fields
-        name = info.get("shortName", symbol)
+        name = info.get("shortName", ticker.upper())
         current_price = info.get("currentPrice", 0.0)
         target_price = info.get("targetMeanPrice", 0.0)
-        target_diff = ((target_price - current_price) / current_price * 100) if current_price else 0.0
-
         pe = info.get("trailingPE", 0.0)
         eps = info.get("trailingEps", 0.0)
 
-        # --- NEW: Separate forward dividend & yield ---
-        forward_div = info.get("dividendRate", 0.0)           # e.g. 1.04 $/share
-        div_yield   = info.get("dividendYield", 0.0)          # e.g. 0.0049 or 0.49
-
-        investment        = 10_000
-        shares_bought     = investment / current_price if current_price else 0
-        income_from_rate  = shares_bought * forward_div
-        income_from_yield = investment * div_yield
-
-        if forward_div > 0 or div_yield > 0:
-            dividend_comment = (
-                f"Forward Dividend: ${forward_div:.2f}/share → "
-                f"${income_from_rate:,.2f}/year on ${investment:,}\n"
-                f"Dividend Yield: {div_yield:.2f}% → "
-                f"${income_from_yield:,.2f}/year on ${investment:,}"
-            )
-        else:
-            dividend_comment = "No dividend"
+        div = round(info.get("dividendYield", 0.0), 4)
 
         cap_raw = info.get("marketCap", 0.0)
         market_cap = (
-            f"{cap_raw/1e12:.2f}T" if cap_raw >= 1e12 else
-            f"{cap_raw/1e9:.2f}B"  if cap_raw >= 1e9  else
-            f"{cap_raw/1e6:.2f}M"  if cap_raw > 0     else
-            "N/A"
+            f"{cap_raw / 1e12:.2f}T" if cap_raw >= 1e12 else
+            f"{cap_raw / 1e9:.2f}B" if cap_raw >= 1e9 else
+            f"{cap_raw / 1e6:.2f}M" if cap_raw > 0 else "N/A"
         )
 
-        # Fundamental metrics
-        revenue_yoy    = (info.get("revenueGrowth") or 0.0) * 100
-        fcf            = info.get("freeCashflow", 0.0) or 0.0
-        debt_to_equity = info.get("debtToEquity", 0.0)
-        roe            = (info.get("returnOnEquity") or 0.0) * 100
-        ev_ebitda      = info.get("enterpriseToEbitda", 0.0)
+        target_diff = ((target_price - current_price) / current_price) * 100 if current_price else 0
 
-        # Fundamental comments
-        revenue_comment   = "Healthy growth" if revenue_yoy > 10 else "Moderate growth"
-        fcf_comment       = "Positive FCF" if fcf > 0 else "Negative / N/A"
-        debt_comment      = "Low leverage" if debt_to_equity < 1 else "High leverage"
-        roe_comment       = "Efficient" if roe > 15 else "Moderate"
-        ev_ebitda_comment = "Cheap EV/EBITDA" if ev_ebitda < 10 else "Expensive"
+        history = stock.history(period="1y")
+        weekly = monthly = yearly = 0.0
+        if len(history) >= 7:
+            weekly = ((history["Close"][-1] - history["Close"][-7]) / history["Close"][-7]) * 100
+        if len(history) >= 30:
+            monthly = ((history["Close"][-1] - history["Close"][-30]) / history["Close"][-30]) * 100
+        if len(history) >= 2:
+            yearly = ((history["Close"][-1] - history["Close"][0]) / history["Close"][0]) * 100
 
-        # Comments
-        pe_comment         = "Low – undervalued" if pe < 15 else "Moderate – fair value" if pe <= 25 else "High – overvalued"
-        eps_comment        = "Strong earnings" if eps > 5 else "Moderate" if eps > 1 else "Weak or negative"
+        trend_comment = (
+            f"Weekly: {'Up' if weekly > 0 else 'Down'} {abs(weekly):.1f}% | "
+            f"Monthly: {'Up' if monthly > 0 else 'Down'} {abs(monthly):.1f}% | "
+            f"Yearly: {'Up' if yearly > 0 else 'Down'} {abs(yearly):.1f}%"
+        )
+
+        pe_comment = (
+            "Low – undervalued (Value Buy)" if pe < 15 else
+            "Moderate – fair value" if pe <= 25 else
+            "High – overvalued (Caution)"
+        )
+
+        eps_comment = "Strong earnings" if eps > 5 else "Moderate" if eps > 1 else "Weak or negative"
+        if div > 0:
+            annual_income = div * 10000
+            monthly_income = annual_income / 12
+            dividend_comment = (
+                f"Dividend Yield: {div:.2f}% — with $10.000 investment, approx. ${monthly_income:.2f}/month or ${annual_income:.2f}/year"
+            )
+        else:
+            dividend_comment = "No dividend paid"
         market_cap_comment = (
-            "Large cap" if cap_raw >= 200e9 else
-            "Mid cap"   if cap_raw >= 10e9  else
-            "Small cap"
+            "Large cap – stable" if cap_raw >= 200e9 else
+            "Mid cap – balanced" if cap_raw >= 10e9 else
+            "Small cap – higher risk"
         )
-        target_comment     = f"Analysts expect {target_diff:.1f}% upside." if target_diff > 0 else f"{abs(target_diff):.1f}% downside potential."
-        recommendation     = "Buy" if pe < 15 and eps > 0 else "Hold" if pe <= 25 else "Sell"
+        target_comment = (
+            f"Analysts expect {target_diff:.1f}% upside." if target_diff > 0
+            else f"{abs(target_diff):.1f}% downside potential."
+        )
 
-        # Recommendation reason & KPI summary
-        recommendation_reason = "\n".join([
-            f"{grade_metric(pe, 15, 25)} P/E: {pe_comment}",
-            f"{grade_metric(eps, 5, 1)} EPS: {eps_comment}",
-            f"{grade_metric(div_yield, 3, 1)} Div: {dividend_comment}"
-        ])
+        recommendation = "Buy" if pe < 15 and eps > 0 else "Hold" if 15 <= pe <= 25 else "Sell"
+
         pb = info.get("priceToBook", 0.0)
-        kpi_summary = summarize_kpis(pe, eps, div_yield, pb, debt_to_equity, roe)
+        debt = info.get("debtToEquity", 0.0)
+        roe = (info.get("returnOnEquity") or 0.0) * 100
 
-        # Next dates
         next_earnings = info.get("earningsTimestamp", None)
         next_dividend = info.get("exDividendDate", None)
 
-        # Historical for trend & technicals
-        hist = stock.history(period="1y")["Close"]
-        def pct_change(n):
-            return ((hist.iloc[-1] - hist.iloc[-n]) / hist.iloc[-n] * 100) if len(hist) >= n else 0.0
-        trend_comment = (
-            f"Weekly: {'Up' if pct_change(7)>0 else 'Down'} {abs(pct_change(7)):.1f}% | "
-            f"Monthly: {'Up' if pct_change(30)>0 else 'Down'} {abs(pct_change(30)):.1f}% | "
-            f"Yearly: {'Up' if pct_change(len(hist))>0 else 'Down'} {abs(pct_change(len(hist))):.1f}%"
-        )
+        recommendation_reason = "\n".join([
+            f"{grade_metric(pe, 15, 25)} P/E Insight: {pe_comment}",
+            f"{grade_metric(eps, 5, 1)} EPS Analysis: {eps_comment}",
+            f"{grade_metric(div, 3, 1)} Annual Dividend Overview: {dividend_comment}"
+        ])
 
-        # Technicals
-        ma50       = float(hist.rolling(50).mean().iloc[-1])   if len(hist)>=50  else 0.0
-        ma200      = float(hist.rolling(200).mean().iloc[-1])  if len(hist)>=200 else 0.0
-        beta       = info.get("beta", 0.0)
-        rsi        = compute_rsi(hist.values) if len(hist)>=15 else 0.0
-        rets       = hist.pct_change().dropna()
-        volatility = float(rets.std() * np.sqrt(252) * 100)
-        var        = float(np.percentile(rets, 5) * 100)
-        drawdown   = float((hist / hist.cummax() - 1).min() * 100)
-
+        kpi_summary = summarize_kpis(pe, eps, div, pb, debt, roe)
         support, resistance = find_support_resistance(stock)
 
         return StockResponse(
-            symbol=symbol,
+            symbol=ticker.upper(),
             name=name,
             current_price=current_price,
             target_price=target_price,
             pe_ratio=pe,
             eps=eps,
-            dividend_yield=div_yield,
+            dividend_yield=div,
             market_cap=market_cap,
             recommendation=recommendation,
             target_diff=round(target_diff, 2),
@@ -224,20 +179,8 @@ def analyze_stock(ticker: str) -> StockResponse:
             support_level=support,
             resistance_level=resistance,
             next_earnings=str(next_earnings) if next_earnings else "Not announced",
-            next_dividend=str(next_dividend) if next_dividend else "N/A",
-            revenue_yoy=round(revenue_yoy, 2),
-            fcf=round(fcf, 2),
-            debt_to_equity=round(debt_to_equity, 2),
-            roe=round(roe, 2),
-            ev_ebitda=round(ev_ebitda, 2),
-            ma50=round(ma50, 2),
-            ma200=round(ma200, 2),
-            beta=round(beta, 2),
-            rsi=round(rsi, 2),
-            volatility=round(volatility, 2),
-            var=round(var, 2),
-            drawdown=round(drawdown, 2),
+            next_dividend=str(next_dividend) if next_dividend else "N/A"
         )
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

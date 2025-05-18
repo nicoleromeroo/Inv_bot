@@ -121,11 +121,14 @@ def analyze_stock(ticker: str):
         )
 
         eps_comment = "Strong earnings" if eps > 5 else "Moderate" if eps > 1 else "Weak or negative"
-        dividend_comment = (
-            "Strong yield for income" if div > 4 else
-            "Moderate yield" if div > 1 else
-            "Low or no dividend"
-        )
+        if div > 0:
+            annual_income = div * 10000
+            monthly_income = annual_income / 12
+            dividend_comment = (
+                f"Dividend Yield: {div:.2f}% — with $10.000 investment, approx. ${monthly_income:.2f}/month or ${annual_income:.2f}/year"
+            )
+        else:
+            dividend_comment = "No dividend paid"
         market_cap_comment = (
             "Large cap – stable" if cap_raw >= 200e9 else
             "Mid cap – balanced" if cap_raw >= 10e9 else
